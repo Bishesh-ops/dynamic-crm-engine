@@ -1,0 +1,24 @@
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Dependency directories
+vendor/
+
+# IDEs and Editors
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Docker / Local DB tracking
+pgdata/
+
+# OS files
+.DS_Store
