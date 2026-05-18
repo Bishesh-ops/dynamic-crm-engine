@@ -38,6 +38,7 @@ func main() {
 	})
 
 	r.Post("/schemas", api.CreateSchemaHandler)
+	r.Post("/entities/{schema_name}", api.CreateEntitiesHandler)
 
 	port := ":8080"
 	fmt.Printf("Starting Dynamic CRM Engine on port %s\n", port)
@@ -75,4 +76,40 @@ func (api *API) CreateSchemaHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	fmt.Fprintf(w, `{"message": "Schema '%s' created successfully", "id": %d}`, req.Name, id)
+}
+
+func (api *API) CreateEntitiesHandler(w http.ResponseWriter, r *http.Request) {
+	schemaName := chi.URLParam(r, "schema_name")
+
+	var payload map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, `{"error": "Invalid JSON payload: %v}`, err)
+		return
+	}
+	s, schemaID, err := api.DB.GetSchemaByName(r.Context(), schemaName)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprintf(w, `{"error": "%v"}`, err)
+		return
+	}
+	if err := s.Validate(payload); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		fmt.Fprintf(w, `{"error": "Validation failed: %v"}`, err)
+		return
+	}
+	entityID, err := api.DB.SaveEntity(r.Context(), schemaID, payload)
+	if err != nil {
+		log.Printf("DB Error: %v\n", err)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		io.WriteString(w, `{"error": "Failed to save entity to database"}`)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	fmt.Fprintf(w, `{"message": "Entity created successfully", "id": "%s"}`, entityID)
 }

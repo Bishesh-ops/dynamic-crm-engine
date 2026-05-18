@@ -1,0 +1,53 @@
+package database
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/bisheshops/dynamic-crm-engine/internal/schema"
+	"github.com/jackc/pgx/v5"
+)
+
+func (db *DB) GetSchemaByName(ctx context.Context, name string) (*schema.Schema, int, error) {
+	var s schema.Schema
+	var id int
+	var structuredBytes []byte
+
+	query := `SELECT id, structure FROM schemas WHERE name = $1`
+
+	err := db.Pool.QueryRow(ctx, query, name).Scan(&id, &structuredBytes)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, 0, fmt.Errorf("schema '%s' is not found", name)
+		}
+		return nil, 0, fmt.Errorf("failed to fetch schema: '%w'", err)
+	}
+
+	if err := json.Unmarshal(structuredBytes, &s); err != nil {
+		return nil, 0, fmt.Errorf("failed to parse schema structure: %w", err)
+	}
+	s.Name = name
+	return &s, id, nil
+}
+
+func (db *DB) SaveEntity(ctx context.Context, schemaID int, data map[string]any) (string, error) {
+	dataJSON, err := json.Marshal(data)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal entity data: %w", err)
+	}
+
+	var entityID string
+	query := `
+		INSERT INTO entities (schema_id, data)
+		VALUES ($1, $2)
+		RETURNING id;
+	`
+
+	err = db.Pool.QueryRow(ctx, query, schemaID, dataJSON).Scan(&entityID)
+	if err != nil {
+		return "", fmt.Errorf("failed to insert entity: %w", err)
+	}
+
+	return entityID, nil
+}

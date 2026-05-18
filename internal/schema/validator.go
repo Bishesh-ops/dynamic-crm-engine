@@ -55,6 +55,20 @@ func validateField(value any, def FieldDefinition, path string) error {
 		if def.MaxLength != nil && len(strVal) > *def.MaxLength {
 			return fmt.Errorf("field %s exceeds max length of %d", path, *def.MaxLength)
 		}
+	case "float":
+		switch v := value.(type) {
+		case float64:
+			if def.Min != nil && v < *def.Min {
+				return fmt.Errorf("field %s must be at least %v", path, *def.Min)
+			}
+		case int:
+			if def.Min != nil && float64(v) < *def.Min {
+				return fmt.Errorf("field %s must be at least %v", path, *def.Min)
+			}
+		default:
+			return fmt.Errorf("invalid type for %s: expected float", path)
+		}
+
 	case "int":
 		switch v := value.(type) {
 		case float64:
@@ -62,11 +76,11 @@ func validateField(value any, def FieldDefinition, path string) error {
 				return fmt.Errorf("invalid tupe for %s: expected int", path)
 			}
 			if def.Min != nil && v < *def.Min {
-				return fmt.Errorf("field %s must be atleast %v", path, *def.Min)
+				return fmt.Errorf("field %s must be at least %v", path, *def.Min)
 			}
 		case int:
 			if def.Min != nil && float64(v) < *def.Min {
-				return fmt.Errorf("field %s must be atleast %v", path, *def.Min)
+				return fmt.Errorf("field %s must be at least %v", path, *def.Min)
 			}
 		default:
 			return fmt.Errorf("invalid type for %s: expected int", path)
