@@ -11,6 +11,7 @@ import (
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
 	"github.com/bisheshops/dynamic-crm-engine/internal/eventbus"
 	"github.com/bisheshops/dynamic-crm-engine/internal/schema"
+	"github.com/bisheshops/dynamic-crm-engine/internal/workflow"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -28,7 +29,7 @@ func main() {
 	}
 	defer db.Close()
 
-	bus := eventbus.New(db, 5, 500, 2*time.Second)
+	bus := eventbus.New(db, 5, 500, 2*time.Second, []workflow.Workflow{})
 
 	api := &API{
 		DB:  db,
@@ -109,9 +110,11 @@ func (api *API) CreateEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error": "Validation failed: %v"}`, err)
 		return
 	}
+
 	api.Bus.Publish(eventbus.Event{
-		SchemaID: schemaID,
-		Payload:  payload,
+		SchemaID:   schemaID,
+		SchemaName: s.Name,
+		Payload:    payload,
 	})
 
 	w.Header().Set("Content-Type", "application/json")

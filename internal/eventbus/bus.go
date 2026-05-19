@@ -3,6 +3,7 @@ package eventbus
 import (
 	"context"
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
+	"github.com/bisheshops/dynamic-crm-engine/internal/workflow"
 	"log"
 	"time"
 )
@@ -11,8 +12,9 @@ type BatchSaver interface {
 	SaveEntityBatch(ctx context.Context, entities []database.BatchEntity) error
 }
 type Event struct {
-	SchemaID int
-	Payload  map[string]any
+	SchemaID   int
+	SchemaName string
+	Payload    map[string]any
 }
 
 type Bus struct {
@@ -20,14 +22,16 @@ type Bus struct {
 	db           BatchSaver
 	batchSize    int
 	batchTimeout time.Duration
+	workflows    []workflow.Workflow
 }
 
-func New(db BatchSaver, workerCount, batchSize int, batchTimeout time.Duration) *Bus {
+func New(db BatchSaver, workerCount, batchSize int, batchTimeout time.Duration, workflows []workflow.Workflow) *Bus {
 	b := &Bus{
 		eventChan:    make(chan Event, batchSize*workerCount),
 		db:           db,
 		batchSize:    batchSize,
 		batchTimeout: batchTimeout,
+		workflows:    workflows,
 	}
 
 	for i := range workerCount {
@@ -50,11 +54,14 @@ func (b *Bus) worker(id int) {
 	for {
 		select {
 		case ev := <-b.eventChan:
+			b.applyWorkflows(&ev)
 			batch = append(batch, ev)
+
 			if len(batch) >= b.batchSize {
 				b.flushBatch(id, batch)
 				batch = make([]Event, 0, b.batchSize)
 			}
+
 		case <-ticker.C:
 			if len(batch) > 0 {
 				b.flushBatch(id, batch)
@@ -63,7 +70,6 @@ func (b *Bus) worker(id int) {
 		}
 	}
 }
-
 func (b *Bus) flushBatch(workerID int, batch []Event) {
 	if len(batch) == 0 {
 		return
@@ -85,4 +91,18 @@ func (b *Bus) flushBatch(workerID int, batch []Event) {
 		return
 	}
 	log.Printf("[Worker %d] Flushing batch of %d events to Postgres", workerID, len(batch))
+}
+
+func (b *Bus) applyWorkflows(ev *Event) {
+	for _, wf := range b.workflows {
+		if !wf.IsActive || wf.TargetSchema != ev.SchemaName {
+			continue
+		}
+		if wf.Condition.Evaluate(ev.Payload) {
+			err := workflow.ApplyActions(ev.Payload, wf.Actions)
+			if err != nil {
+				log.Printf("Workflow '%s' failed on event for schema '%s': %v", wf.Name, ev.SchemaName, err)
+			}
+		}
+	}
 }
