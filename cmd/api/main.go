@@ -6,15 +6,18 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
+	"github.com/bisheshops/dynamic-crm-engine/internal/eventbus"
 	"github.com/bisheshops/dynamic-crm-engine/internal/schema"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 type API struct {
-	DB *database.DB
+	DB  *database.DB
+	Bus *eventbus.Bus
 }
 
 func main() {
@@ -25,7 +28,12 @@ func main() {
 	}
 	defer db.Close()
 
-	api := &API{DB: db}
+	bus := eventbus.New(db, 5, 500, 2*time.Second)
+
+	api := &API{
+		DB:  db,
+		Bus: bus,
+	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -101,15 +109,12 @@ func (api *API) CreateEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"error": "Validation failed: %v"}`, err)
 		return
 	}
-	entityID, err := api.DB.SaveEntity(r.Context(), schemaID, payload)
-	if err != nil {
-		log.Printf("DB Error: %v\n", err)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		io.WriteString(w, `{"error": "Failed to save entity to database"}`)
-		return
-	}
+	api.Bus.Publish(eventbus.Event{
+		SchemaID: schemaID,
+		Payload:  payload,
+	})
+
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	fmt.Fprintf(w, `{"message": "Entity created successfully", "id": "%s"}`, entityID)
+	w.WriteHeader(http.StatusAccepted)
+	io.WriteString(w, `{"message": "Entity queued for processing"}`)
 }

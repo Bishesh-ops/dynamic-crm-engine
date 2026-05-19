@@ -9,6 +9,39 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+type BatchEntity struct {
+	SchemaID int
+	Data     map[string]any
+}
+
+func (db *DB) SaveEntityBatch(ctx context.Context, entities []BatchEntity) error {
+	if len(entities) == 0 {
+		return nil
+	}
+	batch := &pgx.Batch{}
+	query := `INSERT INTO entities (schema_id, data) VALUES ($1, $2)`
+
+	for _, e := range entities {
+		dataJSON, err := json.Marshal(e.Data)
+		if err != nil {
+			return fmt.Errorf("failed to marshal the batch entity data: %w", err)
+		}
+		batch.Queue(query, e.SchemaID, dataJSON)
+	}
+
+	br := db.Pool.SendBatch(ctx, batch)
+
+	defer br.Close()
+	for i := 0; i < len(entities); i++ {
+		_, err := br.Exec()
+		if err != nil {
+			return fmt.Errorf("batch insert failed at row %d: %w", i, err)
+		}
+	}
+
+	return nil
+}
+
 func (db *DB) GetSchemaByName(ctx context.Context, name string) (*schema.Schema, int, error) {
 	var s schema.Schema
 	var id int

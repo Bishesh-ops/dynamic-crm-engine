@@ -1,11 +1,15 @@
 package eventbus
 
 import (
+	"context"
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
 	"log"
 	"time"
 )
 
+type BatchSaver interface {
+	SaveEntityBatch(ctx context.Context, entities []database.BatchEntity) error
+}
 type Event struct {
 	SchemaID int
 	Payload  map[string]any
@@ -13,12 +17,12 @@ type Event struct {
 
 type Bus struct {
 	eventChan    chan Event
-	db           *database.DB
+	db           BatchSaver
 	batchSize    int
 	batchTimeout time.Duration
 }
 
-func New(db *database.DB, workerCount, batchSize int, batchTimeout time.Duration) *Bus {
+func New(db BatchSaver, workerCount, batchSize int, batchTimeout time.Duration) *Bus {
 	b := &Bus{
 		eventChan:    make(chan Event, batchSize*workerCount),
 		db:           db,
@@ -61,5 +65,24 @@ func (b *Bus) worker(id int) {
 }
 
 func (b *Bus) flushBatch(workerID int, batch []Event) {
+	if len(batch) == 0 {
+		return
+	}
+
+	dbBatch := make([]database.BatchEntity, len(batch))
+	for i, ev := range batch {
+		dbBatch[i] = database.BatchEntity{
+			SchemaID: ev.SchemaID,
+			Data:     ev.Payload,
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := b.db.SaveEntityBatch(ctx, dbBatch)
+	if err != nil {
+		log.Printf("[Worker %d] FATAL: Failed to flush batch of %d events: %v", workerID, len(batch), err)
+		return
+	}
 	log.Printf("[Worker %d] Flushing batch of %d events to Postgres", workerID, len(batch))
 }
