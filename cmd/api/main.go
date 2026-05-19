@@ -10,6 +10,7 @@ import (
 
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
 	"github.com/bisheshops/dynamic-crm-engine/internal/eventbus"
+	"github.com/bisheshops/dynamic-crm-engine/internal/query"
 	"github.com/bisheshops/dynamic-crm-engine/internal/schema"
 	"github.com/bisheshops/dynamic-crm-engine/internal/workflow"
 	"github.com/go-chi/chi/v5"
@@ -48,6 +49,7 @@ func main() {
 
 	r.Post("/schemas", api.CreateSchemaHandler)
 	r.Post("/entities/{schema_name}", api.CreateEntitiesHandler)
+	r.Post("/query", SearchEntitiesHandler(db))
 
 	port := ":8080"
 	fmt.Printf("Starting Dynamic CRM Engine on port %s\n", port)
@@ -120,4 +122,30 @@ func (api *API) CreateEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	io.WriteString(w, `{"message": "Entity queued for processing"}`)
+}
+func SearchEntitiesHandler(db *database.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req query.Request
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid query payload", http.StatusBadRequest)
+			return
+		}
+
+		results, err := db.QueryEntities(r.Context(), req)
+		if err != nil {
+			log.Printf("Query error: %v", err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		if results == nil {
+			results = []database.BatchEntity{}
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"count": len(results),
+			"data":  results,
+		})
+	}
 }

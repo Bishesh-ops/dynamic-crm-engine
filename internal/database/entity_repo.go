@@ -5,13 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bisheshops/dynamic-crm-engine/internal/query"
 	"github.com/bisheshops/dynamic-crm-engine/internal/schema"
 	"github.com/jackc/pgx/v5"
 )
 
 type BatchEntity struct {
-	SchemaID int
-	Data     map[string]any
+	ID       string         `json:"id,omitempty"`
+	SchemaID int            `json:"schema_id"`
+	Data     map[string]any `json:"data"`
 }
 
 func (db *DB) SaveEntityBatch(ctx context.Context, entities []BatchEntity) error {
@@ -32,7 +34,7 @@ func (db *DB) SaveEntityBatch(ctx context.Context, entities []BatchEntity) error
 	br := db.Pool.SendBatch(ctx, batch)
 
 	defer br.Close()
-	for i := 0; i < len(entities); i++ {
+	for i := range len(entities) {
 		_, err := br.Exec()
 		if err != nil {
 			return fmt.Errorf("batch insert failed at row %d: %w", i, err)
@@ -83,4 +85,33 @@ func (db *DB) SaveEntity(ctx context.Context, schemaID int, data map[string]any)
 	}
 
 	return entityID, nil
+}
+
+func (db *DB) QueryEntities(ctx context.Context, req query.Request) ([]BatchEntity, error) {
+	sqlStr, args, err := query.BuildSQL(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build query: %w", err)
+	}
+
+	rows, err := db.Pool.Query(ctx, sqlStr, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query execution failed: %w", err)
+	}
+	defer rows.Close()
+
+	var results []BatchEntity
+	for rows.Next() {
+		var e BatchEntity
+
+		if err := rows.Scan(&e.ID, &e.SchemaID, &e.Data); err != nil {
+			return nil, err
+		}
+		results = append(results, e)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }
