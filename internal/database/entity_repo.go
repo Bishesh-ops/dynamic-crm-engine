@@ -115,3 +115,46 @@ func (db *DB) QueryEntities(ctx context.Context, req query.Request) ([]BatchEnti
 
 	return results, nil
 }
+
+func (db *DB) GetEntityByID(ctx context.Context, id string) (*BatchEntity, error) {
+	query := `SELECT id, schema_id, data FROM entities WHERE id = $1`
+	var e BatchEntity
+	err := db.Pool.QueryRow(ctx, query, id).Scan(&e.ID, &e.SchemaID, &e.Data)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, fmt.Errorf("entity not found")
+		}
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+	return &e, nil
+}
+
+func (db *DB) UpdateEntityByID(ctx context.Context, id string, data map[string]any) error {
+	query := `UPDATE entities SET data = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`
+
+	cmdTag, err := db.Pool.Exec(ctx, query, data, id)
+	if err != nil {
+		return fmt.Errorf("failed to update entity: %w", err)
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		return fmt.Errorf("entity not found")
+	}
+
+	return nil
+}
+
+func (db *DB) DeleteEntityByID(ctx context.Context, id string) error {
+	query := `DELETE FROM entities WHERE id = $1`
+
+	cmdTag, err := db.Pool.Exec(ctx, query, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete entity: %w", err)
+	}
+
+	if cmdTag.RowsAffected() == 0 {
+		return fmt.Errorf("entity not found")
+	}
+
+	return nil
+}
