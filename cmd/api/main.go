@@ -16,6 +16,7 @@ import (
 	"github.com/bisheshops/dynamic-crm-engine/internal/response"
 	"github.com/bisheshops/dynamic-crm-engine/internal/schema"
 	"github.com/bisheshops/dynamic-crm-engine/internal/workflow"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -69,6 +70,7 @@ func main() {
 	r.Post("/schemas", api.CreateSchemaHandler)
 	r.Post("/entities/{schema_name}", api.CreateEntitiesHandler)
 	r.Post("/query", api.SearchEntitiesHandler)
+	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 
 	port := ":8080"
 	fmt.Printf("Starting Dynamic CRM Engine on port %s\n", port)

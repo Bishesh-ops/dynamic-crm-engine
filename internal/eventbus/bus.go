@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
+	"github.com/bisheshops/dynamic-crm-engine/internal/metrics"
 	"github.com/bisheshops/dynamic-crm-engine/internal/workflow"
+	"github.com/prometheus/client_golang/prometheus"
 	"log"
 	"time"
 )
@@ -47,6 +49,7 @@ func New(db BatchSaver, workerCount, batchSize int, batchTimeout time.Duration, 
 func (b *Bus) Publish(ev Event) error {
 	select {
 	case b.eventChan <- ev:
+		metrics.QueueLength.Inc()
 		return nil
 	default:
 		return ErrQueueFull
@@ -62,6 +65,7 @@ func (b *Bus) worker(id int) {
 	for {
 		select {
 		case ev := <-b.eventChan:
+			metrics.QueueLength.Dec()
 			b.applyWorkflows(&ev)
 			batch = append(batch, ev)
 
@@ -90,14 +94,18 @@ func (b *Bus) flushBatch(workerID int, batch []Event) {
 			Data:     ev.Payload,
 		}
 	}
+	timer := prometheus.NewTimer(metrics.BatchFlushDuration)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	err := b.db.SaveEntityBatch(ctx, dbBatch)
+	timer.ObserveDuration()
 	if err != nil {
+		metrics.EventsProcessed.WithLabelValues("error").Add(float64(len(batch)))
 		log.Printf("[Worker %d] FATAL: Failed to flush batch of %d events: %v", workerID, len(batch), err)
 		return
 	}
+	metrics.EventsProcessed.WithLabelValues("success").Add(float64(len(batch)))
 	log.Printf("[Worker %d] Flushing batch of %d events to Postgres", workerID, len(batch))
 }
 
