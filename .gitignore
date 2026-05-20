@@ -22,3 +22,6 @@ pgdata/
 
 # OS files
 .DS_Store
+
+.env
+crm-engine

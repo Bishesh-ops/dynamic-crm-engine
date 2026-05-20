@@ -28,7 +28,10 @@ type API struct {
 }
 
 func main() {
-	dsn := "postgres://admin:rootpassword@localhost:5432/dynamic_crm?sslmode=disable"
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://admin:rootpassword@localhost:5432/dynamic_crm?sslmode=disable"
+	}
 
 	db, err := database.New(dsn)
 	if err != nil {
