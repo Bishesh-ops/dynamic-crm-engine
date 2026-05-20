@@ -158,3 +158,28 @@ func (db *DB) DeleteEntityByID(ctx context.Context, id string) error {
 
 	return nil
 }
+
+func (db *DB) GetRecentEntities(ctx context.Context, limit int) ([]BatchEntity, error) {
+	query := `SELECT id, schema_id, data FROM entities ORDER BY created_at DESC LIMIT $1`
+
+	rows, err := db.Pool.Query(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch recent entities: %w", err)
+	}
+	defer rows.Close()
+
+	var results []BatchEntity
+	for rows.Next() {
+		var e BatchEntity
+		if err := rows.Scan(&e.ID, &e.SchemaID, &e.Data); err != nil {
+			return nil, err
+		}
+		results = append(results, e)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}

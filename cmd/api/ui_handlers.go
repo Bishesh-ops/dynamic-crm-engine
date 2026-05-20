@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
-	"github.com/bisheshops/dynamic-crm-engine/internal/query"
+	// "github.com/bisheshops/dynamic-crm-engine/internal/query"
 	"github.com/bisheshops/dynamic-crm-engine/internal/response"
 	"github.com/go-chi/chi/v5"
 )
@@ -14,12 +14,7 @@ type PageData struct {
 }
 
 func (api *API) DashboardPageHandler(w http.ResponseWriter, r *http.Request) {
-	req := query.Request{
-		Limit:  50,
-		Offset: 0,
-	}
-
-	results, err := api.DB.QueryEntities(r.Context(), req)
+	results, err := api.DB.GetRecentEntities(r.Context(), 50)
 	if err != nil {
 		http.Error(w, "Failed to load dashboard data", http.StatusInternalServerError)
 		return
@@ -39,12 +34,7 @@ func (api *API) DashboardPageHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func (api *API) EntityTableFragmentHandler(w http.ResponseWriter, r *http.Request) {
-	req := query.Request{
-		Limit:  50,
-		Offset: 0,
-	}
-
-	results, err := api.DB.QueryEntities(r.Context(), req)
+	results, err := api.DB.GetRecentEntities(r.Context(), 50)
 	if err != nil {
 		http.Error(w, "<tr><td colspan='4'>Failed to refresh data</td></tr>", http.StatusInternalServerError)
 		return
