@@ -76,6 +76,10 @@ func main() {
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 	r.Post("/workflows", api.CreateWorkflowHandler)
 
+	r.Get("/entities/{id}", api.GetEntityHandler)
+	r.Put("/entities/{schema_name}/{id}", api.UpdateEntityHandler)
+	r.Delete("/entities/{id}", api.DeleteEntityHandler)
+
 	port := ":8080"
 	fmt.Printf("Starting Dynamic CRM Engine on port %s\n", port)
 
@@ -179,4 +183,56 @@ func (api *API) CreateWorkflowHandler(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusCreated, map[string]string{
 		"message": "Workflow sucessfullt injected inot thel ive engine",
 	})
+}
+
+func (api *API) GetEntityHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	entity, err := api.DB.GetEntityByID(r.Context(), id)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, entity)
+}
+
+func (api *API) UpdateEntityHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	schemaName := chi.URLParam(r, "schema_name")
+
+	var payload map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid JSON payload")
+		return
+	}
+
+	s, _, err := api.DB.GetSchemaByName(r.Context(), schemaName)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	if err := s.Validate(payload); err != nil {
+		response.Error(w, http.StatusUnprocessableEntity, fmt.Sprintf("Validation failed: %v", err))
+		return
+	}
+
+	if err := api.DB.UpdateEntityByID(r.Context(), id, payload); err != nil {
+		response.Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Entity updated successfully"})
+}
+
+func (api *API) DeleteEntityHandler(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if err := api.DB.DeleteEntityByID(r.Context(), id); err != nil {
+		response.Error(w, http.StatusNotFound, err.Error())
+		return
+	}
+
+	response.JSON(w, http.StatusOK, map[string]string{"message": "Entity deleted successfully"})
 }
