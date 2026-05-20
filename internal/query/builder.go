@@ -3,8 +3,11 @@ package query
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+var validFieldRegex = regexp.MustCompile(`^[a-zA-Z0-9_.]+$`)
 
 type Request struct {
 	SchemaID   int         `json:"schema_id"`
@@ -31,7 +34,7 @@ func BuildSQL(req Request) (string, []any, error) {
 	whereClauses = append(whereClauses, "schema_id = $1")
 
 	for _, c := range req.Conditions {
-		if strings.ContainsAny(c.Field, "';\"\\") {
+		if !validFieldRegex.MatchString(c.Field) {
 			return "", nil, fmt.Errorf("invalid characters in field name: %s", c.Field)
 		}
 

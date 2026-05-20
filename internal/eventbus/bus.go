@@ -2,11 +2,14 @@ package eventbus
 
 import (
 	"context"
+	"errors"
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
 	"github.com/bisheshops/dynamic-crm-engine/internal/workflow"
 	"log"
 	"time"
 )
+
+var ErrQueueFull = errors.New("event bus queue is full, backpressure applied")
 
 type BatchSaver interface {
 	SaveEntityBatch(ctx context.Context, entities []database.BatchEntity) error
@@ -41,8 +44,13 @@ func New(db BatchSaver, workerCount, batchSize int, batchTimeout time.Duration, 
 	return b
 }
 
-func (b *Bus) Publish(ev Event) {
-	b.eventChan <- ev
+func (b *Bus) Publish(ev Event) error {
+	select {
+	case b.eventChan <- ev:
+		return nil
+	default:
+		return ErrQueueFull
+	}
 }
 
 func (b *Bus) worker(id int) {

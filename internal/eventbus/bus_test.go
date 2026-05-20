@@ -59,9 +59,14 @@ func TestEventBus_TimeoutTrigger(t *testing.T) {
 	mockDB := &MockDB{}
 	bus := New(mockDB, 1, 100, 100*time.Millisecond, []workflow.Workflow{})
 
-	bus.Publish(Event{SchemaID: 1, Payload: map[string]any{"msg": "wait for me"}})
-	bus.Publish(Event{SchemaID: 1, Payload: map[string]any{"msg": "me too"}})
-
+	err := bus.Publish(Event{SchemaID: 0, Payload: map[string]any{"msg": "wait for me"}})
+	if err != nil {
+		t.Fatalf("Error: %v", err)
+	}
+	err = bus.Publish(Event{SchemaID: 0, Payload: map[string]any{"msg": "me too"}})
+	if err != nil {
+		t.Fatalf("Error: %v", err)
+	}
 	deadline := time.Now().Add(2 * time.Second)
 	success := false
 
