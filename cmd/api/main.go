@@ -74,6 +74,7 @@ func main() {
 	r.Post("/entities/{schema_name}", api.CreateEntitiesHandler)
 	r.Post("/query", api.SearchEntitiesHandler)
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
+	r.Post("/workflows", api.CreateWorkflowHandler)
 
 	port := ":8080"
 	fmt.Printf("Starting Dynamic CRM Engine on port %s\n", port)
@@ -164,5 +165,18 @@ func (api *API) SearchEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 	response.JSON(w, http.StatusOK, map[string]any{
 		"count": len(results),
 		"data":  results,
+	})
+}
+
+func (api *API) CreateWorkflowHandler(w http.ResponseWriter, r *http.Request) {
+	var wf workflow.Workflow
+
+	if err := json.NewDecoder(r.Body).Decode(&wf); err != nil {
+		response.Error(w, http.StatusBadRequest, "Invalid workflow JSON payload")
+		return
+	}
+	api.Bus.AddWorkflow(wf)
+	response.JSON(w, http.StatusCreated, map[string]string{
+		"message": "Workflow sucessfullt injected inot thel ive engine",
 	})
 }

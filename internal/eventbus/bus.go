@@ -3,12 +3,14 @@ package eventbus
 import (
 	"context"
 	"errors"
+	"log"
+	"sync"
+	"time"
+
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
 	"github.com/bisheshops/dynamic-crm-engine/internal/metrics"
 	"github.com/bisheshops/dynamic-crm-engine/internal/workflow"
 	"github.com/prometheus/client_golang/prometheus"
-	"log"
-	"time"
 )
 
 var ErrQueueFull = errors.New("event bus queue is full, backpressure applied")
@@ -16,6 +18,7 @@ var ErrQueueFull = errors.New("event bus queue is full, backpressure applied")
 type BatchSaver interface {
 	SaveEntityBatch(ctx context.Context, entities []database.BatchEntity) error
 }
+
 type Event struct {
 	SchemaID   int
 	SchemaName string
@@ -27,7 +30,9 @@ type Bus struct {
 	db           BatchSaver
 	batchSize    int
 	batchTimeout time.Duration
-	workflows    []workflow.Workflow
+
+	workflows []workflow.Workflow
+	mu        sync.RWMutex
 }
 
 func New(db BatchSaver, workerCount, batchSize int, batchTimeout time.Duration, workflows []workflow.Workflow) *Bus {
@@ -44,6 +49,14 @@ func New(db BatchSaver, workerCount, batchSize int, batchTimeout time.Duration, 
 	}
 	log.Printf("Event bus initialized with %d workers. Batch size: %d", workerCount, batchSize)
 	return b
+}
+
+func (b *Bus) AddWorkflow(wf workflow.Workflow) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.workflows = append(b.workflows, wf)
+	log.Printf("Hot-loaded new workflow '%s'. Total active workflows: %d", wf.Name, len(b.workflows))
 }
 
 func (b *Bus) Publish(ev Event) error {
@@ -82,6 +95,7 @@ func (b *Bus) worker(id int) {
 		}
 	}
 }
+
 func (b *Bus) flushBatch(workerID int, batch []Event) {
 	if len(batch) == 0 {
 		return
@@ -110,6 +124,9 @@ func (b *Bus) flushBatch(workerID int, batch []Event) {
 }
 
 func (b *Bus) applyWorkflows(ev *Event) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
 	for _, wf := range b.workflows {
 		if !wf.IsActive || wf.TargetSchema != ev.SchemaName {
 			continue

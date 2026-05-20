@@ -25,3 +25,4 @@ pgdata/
 
 .env
 crm-engine
+stress_test.sh
