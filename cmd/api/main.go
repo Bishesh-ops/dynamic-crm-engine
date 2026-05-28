@@ -43,21 +43,32 @@ func main() {
 	}
 	defer db.Close()
 
-	// Initialize Database Schema
-	migrationPath := filepath.Join("cmd", "api", "migrations", "001_init.sql")
-	initSQL, err := os.ReadFile(migrationPath)
-	if err != nil {
-		log.Fatalf("Failed to read schema initialization file: %v", err)
-	}
+	migrationFiles := []string{"001_init.sql", "002_workflows.sql"}
+	for _, file := range migrationFiles {
+		path := filepath.Join("cmd", "api", "migrations", file)
+		sqlBytes, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatalf("Failed to read migration %s: %v", file, err)
+		}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	_, err = db.Pool.Exec(ctx, string(initSQL))
-	cancel()
-	if err != nil {
-		log.Fatalf("Failed to run schema initialization: %v", err)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_, err = db.Pool.Exec(ctx, string(sqlBytes))
+		cancel()
+		if err != nil {
+			log.Fatalf("Failed to run migration %s: %v", file, err)
+		}
 	}
+	log.Println("Database schemas and tables verified successfully.")
 
-	bus := eventbus.New(db, 5, 500, 2*time.Second, []workflow.Workflow{})
+	ctxLoad, cancelLoad := context.WithTimeout(context.Background(), 5*time.Second)
+	activeWorkflows, err := db.LoadWorkflows(ctxLoad)
+	cancelLoad()
+	if err != nil {
+		log.Fatalf("Failed to load workflows: %v", err)
+	}
+	log.Printf("Loaded %d active workflows from database.", len(activeWorkflows))
+
+	bus := eventbus.New(db, 5, 500, 2*time.Second, activeWorkflows)
 
 	templateCache, err := ui.NewTemplateCache()
 	if err != nil {
@@ -74,16 +85,21 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	// --- 1. Static Assets ---
+	// Serve CSS/JS files directly from the embedded binary
 	staticFS, err := fs.Sub(web.Assets, "static")
 	if err != nil {
 		log.Fatalf("Failed to load embedded static files: %v", err)
 	}
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+
+	// --- 2. System / Observability Routes ---
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		response.JSON(w, http.StatusOK, map[string]string{"status": "engine and database are running"})
 	})
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 
+	// --- 3. JSON API Core (System-to-System integration) ---
 	r.Route("/api", func(r chi.Router) {
 		r.Post("/schemas", api.CreateSchemaHandler)
 		r.Post("/entities/{schema_name}", api.CreateEntitiesHandler)
@@ -95,8 +111,12 @@ func main() {
 		r.Delete("/entities/{id}", api.DeleteEntityHandler)
 	})
 
+	// --- 4. HTML/HTMX UI Routes (Human Interaction) ---
 	r.Route("/ui", func(r chi.Router) {
+		// Full Page Loads
 		r.Get("/dashboard", api.DashboardPageHandler)
+
+		// HTMX Partial Fragments
 		r.Get("/entities/fragment", api.EntityTableFragmentHandler)
 		r.Delete("/entities/{id}", api.DeleteEntityUIHandler)
 	})
@@ -198,9 +218,20 @@ func (api *API) CreateWorkflowHandler(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, "Invalid workflow JSON payload")
 		return
 	}
+	id, err := api.DB.SaveWorkflow(r.Context(), wf)
+	if err != nil {
+		log.Printf("DB Error saving workflow: %v\n", err)
+		response.Error(w, http.StatusInternalServerError, "Failed to save workflow to database")
+		return
+	}
+
+	wf.ID = id
+
 	api.Bus.AddWorkflow(wf)
-	response.JSON(w, http.StatusCreated, map[string]string{
-		"message": "Workflow sucessfullt injected inot thel ive engine",
+
+	response.JSON(w, http.StatusCreated, map[string]any{
+		"message": "Workflow created and injected into live engine",
+		"id":      id,
 	})
 }
 
