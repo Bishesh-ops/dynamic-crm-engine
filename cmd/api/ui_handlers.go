@@ -59,3 +59,12 @@ func (api *API) DeleteEntityUIHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 }
+
+func (api *API) SchemaBuilderPageHandler(w http.ResponseWriter, r *http.Request) {
+	ts, ok := api.Cache["schemas.html"]
+	if !ok {
+		http.Error(w, "Template Not found", http.StatusInternalServerError)
+		return
+	}
+	response.HTML(w, http.StatusOK, ts, "base", nil)
+}

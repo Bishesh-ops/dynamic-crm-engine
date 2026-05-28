@@ -111,10 +111,11 @@ func main() {
 		r.Delete("/entities/{id}", api.DeleteEntityHandler)
 	})
 
-	// --- 4. HTML/HTMX UI Routes (Human Interaction) ---
+	// --- 4. HTML/HTMX  ---
 	r.Route("/ui", func(r chi.Router) {
 		// Full Page Loads
 		r.Get("/dashboard", api.DashboardPageHandler)
+		r.Get("/schemas", api.SchemaBuilderPageHandler)
 
 		// HTMX Partial Fragments
 		r.Get("/entities/fragment", api.EntityTableFragmentHandler)
