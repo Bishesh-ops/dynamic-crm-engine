@@ -2,8 +2,10 @@ package main
 
 import (
 	"net/http"
+	"os"
 
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
+
 	// "github.com/bisheshops/dynamic-crm-engine/internal/query"
 	"github.com/bisheshops/dynamic-crm-engine/internal/response"
 	"github.com/go-chi/chi/v5"
@@ -11,6 +13,10 @@ import (
 
 type PageData struct {
 	Entities []database.BatchEntity
+}
+
+type SchemaBuilderData struct {
+	APIKey string
 }
 
 func (api *API) DashboardPageHandler(w http.ResponseWriter, r *http.Request) {
@@ -66,5 +72,8 @@ func (api *API) SchemaBuilderPageHandler(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "Template Not found", http.StatusInternalServerError)
 		return
 	}
-	response.HTML(w, http.StatusOK, ts, "base", nil)
+	data := SchemaBuilderData{
+		APIKey: os.Getenv("API_KEY"),
+	}
+	response.HTML(w, http.StatusOK, ts, "base", data)
 }

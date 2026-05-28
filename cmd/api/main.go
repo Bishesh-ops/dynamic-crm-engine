@@ -13,6 +13,9 @@ import (
 
 	"github.com/bisheshops/dynamic-crm-engine/internal/database"
 	"github.com/bisheshops/dynamic-crm-engine/internal/eventbus"
+
+	auth "github.com/bisheshops/dynamic-crm-engine/internal/middleware"
+
 	"github.com/bisheshops/dynamic-crm-engine/internal/query"
 	"github.com/bisheshops/dynamic-crm-engine/internal/response"
 	"github.com/bisheshops/dynamic-crm-engine/internal/schema"
@@ -35,6 +38,11 @@ func main() {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		dsn = "postgres://admin:rootpassword@localhost:5432/dynamic_crm?sslmode=disable"
+	}
+
+	apiKey := os.Getenv("API_KEY")
+	if apiKey == "" {
+		log.Fatal("FATAL: API_KEY environment variable is not set. Security cannot be granted.")
 	}
 
 	db, err := database.New(dsn)
@@ -85,22 +93,20 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	// --- 1. Static Assets ---
-	// Serve CSS/JS files directly from the embedded binary
 	staticFS, err := fs.Sub(web.Assets, "static")
 	if err != nil {
 		log.Fatalf("Failed to load embedded static files: %v", err)
 	}
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
-	// --- 2. System / Observability Routes ---
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		response.JSON(w, http.StatusOK, map[string]string{"status": "engine and database are running"})
 	})
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 
-	// --- 3. JSON API Core (System-to-System integration) ---
 	r.Route("/api", func(r chi.Router) {
+		r.Use(auth.RequireAPIKey(apiKey))
+
 		r.Post("/schemas", api.CreateSchemaHandler)
 		r.Post("/entities/{schema_name}", api.CreateEntitiesHandler)
 		r.Post("/query", api.SearchEntitiesHandler)
@@ -111,13 +117,10 @@ func main() {
 		r.Delete("/entities/{id}", api.DeleteEntityHandler)
 	})
 
-	// --- 4. HTML/HTMX  ---
 	r.Route("/ui", func(r chi.Router) {
-		// Full Page Loads
 		r.Get("/dashboard", api.DashboardPageHandler)
 		r.Get("/schemas", api.SchemaBuilderPageHandler)
 
-		// HTMX Partial Fragments
 		r.Get("/entities/fragment", api.EntityTableFragmentHandler)
 		r.Delete("/entities/{id}", api.DeleteEntityUIHandler)
 	})
@@ -128,6 +131,7 @@ func main() {
 		log.Fatalf("Server failed to start: %v", err)
 	}
 }
+
 func (api *API) CreateSchemaHandler(w http.ResponseWriter, r *http.Request) {
 	var req schema.Schema
 

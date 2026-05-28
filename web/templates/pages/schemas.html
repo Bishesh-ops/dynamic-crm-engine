@@ -97,7 +97,10 @@
         try {
             const response = await fetch('/api/schemas', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-API-Key': '{{ .APIKey }}'
+                 },
                 body: JSON.stringify(payload)
             });
 
