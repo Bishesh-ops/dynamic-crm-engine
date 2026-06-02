@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	"github.com/bisheshops/dynamic-crm-engine/internal/query"
 	"github.com/bisheshops/dynamic-crm-engine/internal/schema"
 	"github.com/jackc/pgx/v5"
@@ -14,6 +15,11 @@ type BatchEntity struct {
 	ID       string         `json:"id,omitempty"`
 	SchemaID int            `json:"schema_id"`
 	Data     map[string]any `json:"data"`
+}
+type DLQEvent struct {
+	SchemaID   int
+	SchemaName string
+	Payload    map[string]any
 }
 
 func (db *DB) SaveEntityBatch(ctx context.Context, entities []BatchEntity) error {
@@ -182,4 +188,30 @@ func (db *DB) GetRecentEntities(ctx context.Context, limit int) ([]BatchEntity, 
 	}
 
 	return results, nil
+}
+
+func (db *DB) SaveToDLQ(ctx context.Context, events []DLQEvent, reason string) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	batch := &pgx.Batch{}
+	query := `INSERT INTO dead_letter_queue (schema_id, schema_name, payload, error_reason) VALUES ($1, $2, $3, $4)`
+
+	for _, ev := range events {
+		dataJSON, err := json.Marshal(ev.Payload)
+		if err != nil {
+			continue
+		}
+		batch.Queue(query, ev.SchemaID, ev.SchemaName, dataJSON, reason)
+	}
+
+	br := db.Pool.SendBatch(ctx, batch)
+	defer br.Close()
+	for i := range events {
+		if _, err := br.Exec(); err != nil {
+			return fmt.Errorf("DLQ batch insert failed at row %d: %w", i, err)
+		}
+	}
+	return nil
 }

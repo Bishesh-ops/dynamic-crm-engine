@@ -17,6 +17,7 @@ var ErrQueueFull = errors.New("event bus queue is full, backpressure applied")
 
 type BatchSaver interface {
 	SaveEntityBatch(ctx context.Context, entities []database.BatchEntity) error
+	SaveToDLQ(ctx context.Context, events []database.DLQEvent, reason string) error
 }
 
 type Event struct {
@@ -108,17 +109,34 @@ func (b *Bus) flushBatch(workerID int, batch []Event) {
 			Data:     ev.Payload,
 		}
 	}
-	timer := prometheus.NewTimer(metrics.BatchFlushDuration)
 
+	timer := prometheus.NewTimer(metrics.BatchFlushDuration)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
 	err := b.db.SaveEntityBatch(ctx, dbBatch)
 	timer.ObserveDuration()
+
 	if err != nil {
 		metrics.EventsProcessed.WithLabelValues("error").Add(float64(len(batch)))
-		log.Printf("[Worker %d] FATAL: Failed to flush batch of %d events: %v", workerID, len(batch), err)
+		log.Printf("[Worker %d] ERROR: Failed to flush batch of %d events: %v. Routing to DLQ.", workerID, len(batch), err)
+
+		dlqCtx, dlqCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer dlqCancel()
+		dlqEvents := make([]database.DLQEvent, len(batch))
+		for i, ev := range batch {
+			dlqEvents[i] = database.DLQEvent{
+				SchemaID:   ev.SchemaID,
+				SchemaName: ev.SchemaName,
+				Payload:    ev.Payload,
+			}
+		}
+		if dlqErr := b.db.SaveToDLQ(dlqCtx, dlqEvents, err.Error()); dlqErr != nil {
+			log.Printf("[Worker %d] FATAL: DLQ write failed! %d events permanently lost: %v", workerID, len(batch), dlqErr)
+		}
 		return
 	}
+
 	metrics.EventsProcessed.WithLabelValues("success").Add(float64(len(batch)))
 	log.Printf("[Worker %d] Flushing batch of %d events to Postgres", workerID, len(batch))
 }

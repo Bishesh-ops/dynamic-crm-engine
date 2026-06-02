@@ -14,6 +14,8 @@ type MockDB struct {
 	mu              sync.Mutex
 	BatchesReceived int
 	TotalEvents     int
+	DLQBatches      int // Tracks how many times the DLQ was hit
+	DLQEvents       int // Tracks total events routed to DLQ
 }
 
 func (m *MockDB) SaveEntityBatch(ctx context.Context, entities []database.BatchEntity) error {
@@ -21,6 +23,14 @@ func (m *MockDB) SaveEntityBatch(ctx context.Context, entities []database.BatchE
 	defer m.mu.Unlock()
 	m.BatchesReceived++
 	m.TotalEvents += len(entities)
+	return nil
+}
+
+func (m *MockDB) SaveToDLQ(ctx context.Context, events []database.DLQEvent, reason string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.DLQBatches++
+	m.DLQEvents += len(events)
 	return nil
 }
 

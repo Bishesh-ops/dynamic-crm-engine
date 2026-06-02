@@ -51,7 +51,7 @@ func main() {
 	}
 	defer db.Close()
 
-	migrationFiles := []string{"001_init.sql", "002_workflows.sql"}
+	migrationFiles := []string{"001_init.sql", "002_workflows.sql", "003_dlq.sql"}
 	for _, file := range migrationFiles {
 		path := filepath.Join("cmd", "api", "migrations", file)
 		sqlBytes, err := os.ReadFile(path)
