@@ -21,6 +21,41 @@ type DLQEvent struct {
 	SchemaName string
 	Payload    map[string]any
 }
+type DLQRecord struct {
+	ID         int
+	SchemaID   int
+	SchemaName string
+	Payload    map[string]any
+}
+
+func (db *DB) GetUnresolvedDLQEvents(ctx context.Context, limit int) ([]DLQRecord, error) {
+	query := `SELECT id, schema_id, schema_name, payload FROM dead_letter_queue WHERE resolved = FALSE LIMIT $1`
+
+	rows, err := db.Pool.Query(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch DLQ events: %w", err)
+	}
+	defer rows.Close()
+
+	var results []DLQRecord
+	for rows.Next() {
+		var r DLQRecord
+		if err := rows.Scan(&r.ID, &r.SchemaID, &r.SchemaName, &r.Payload); err != nil {
+			return nil, err
+		}
+		results = append(results, r)
+	}
+	return results, rows.Err()
+}
+
+func (db *DB) MarkDLQEventsResolved(ctx context.Context, ids []int) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	query := `UPDATE dead_letter_queue SET resolved = TRUE WHERE id = ANY($1)`
+	_, err := db.Pool.Exec(ctx, query, ids)
+	return err
+}
 
 func (db *DB) SaveEntityBatch(ctx context.Context, entities []BatchEntity) error {
 	if len(entities) == 0 {

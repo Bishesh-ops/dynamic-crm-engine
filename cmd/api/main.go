@@ -111,7 +111,7 @@ func main() {
 		r.Post("/entities/{schema_name}", api.CreateEntitiesHandler)
 		r.Post("/query", api.SearchEntitiesHandler)
 		r.Post("/workflows", api.CreateWorkflowHandler)
-
+		r.Post("/dlq/replay", api.ReplayDLQHandler)
 		r.Get("/entities/{id}", api.GetEntityHandler)
 		r.Put("/entities/{schema_name}/{id}", api.UpdateEntityHandler)
 		r.Delete("/entities/{id}", api.DeleteEntityHandler)
@@ -290,4 +290,48 @@ func (api *API) DeleteEntityHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response.JSON(w, http.StatusOK, map[string]string{"message": "Entity deleted successfully"})
+}
+
+func (api *API) ReplayDLQHandler(w http.ResponseWriter, r *http.Request) {
+	records, err := api.DB.GetUnresolvedDLQEvents(r.Context(), 500)
+	if err != nil {
+		log.Printf("DLQ Fetch Error: %v", err)
+		response.Error(w, http.StatusInternalServerError, "Failed to fetch DLQ events")
+		return
+	}
+
+	if len(records) == 0 {
+		response.JSON(w, http.StatusOK, map[string]string{"message": "DLQ is empty. No events to replay."})
+		return
+	}
+
+	var resolvedIDs []int
+	replayedCount := 0
+
+	for _, rec := range records {
+		err := api.Bus.Publish(eventbus.Event{
+			SchemaID:   rec.SchemaID,
+			SchemaName: rec.SchemaName,
+			Payload:    rec.Payload,
+		})
+
+		if err == nil {
+			resolvedIDs = append(resolvedIDs, rec.ID)
+			replayedCount++
+		} else if err == eventbus.ErrQueueFull {
+			log.Println("DLQ Replay paused: Engine queue is full.")
+			break
+		}
+	}
+
+	if len(resolvedIDs) > 0 {
+		if err := api.DB.MarkDLQEventsResolved(r.Context(), resolvedIDs); err != nil {
+			log.Printf("Failed to mark DLQ events as resolved: %v", err)
+		}
+	}
+
+	response.JSON(w, http.StatusOK, map[string]any{
+		"message":  fmt.Sprintf("Successfully re-queued %d events from the DLQ", replayedCount),
+		"replayed": replayedCount,
+	})
 }
