@@ -40,9 +40,9 @@ func main() {
 		dsn = "postgres://admin:rootpassword@localhost:5432/dynamic_crm?sslmode=disable"
 	}
 
-	apiKey := os.Getenv("API_KEY")
-	if apiKey == "" {
-		log.Fatal("FATAL: API_KEY environment variable is not set. Security cannot be granted.")
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		log.Fatal("FATAL: JWT_SECRET environment variable is not set.")
 	}
 
 	db, err := database.New(dsn)
@@ -104,14 +104,18 @@ func main() {
 	})
 	r.Get("/metrics", promhttp.Handler().ServeHTTP)
 
+	r.Post("/auth/register", api.RegisterHandler)
+	r.Post("/auth/login", api.LoginHandler)
+
 	r.Route("/api", func(r chi.Router) {
-		r.Use(auth.RequireAPIKey(apiKey))
+		r.Use(auth.RequireJWT(jwtSecret))
 
 		r.Post("/schemas", api.CreateSchemaHandler)
 		r.Post("/entities/{schema_name}", api.CreateEntitiesHandler)
 		r.Post("/query", api.SearchEntitiesHandler)
 		r.Post("/workflows", api.CreateWorkflowHandler)
 		r.Post("/dlq/replay", api.ReplayDLQHandler)
+
 		r.Get("/entities/{id}", api.GetEntityHandler)
 		r.Put("/entities/{schema_name}/{id}", api.UpdateEntityHandler)
 		r.Delete("/entities/{id}", api.DeleteEntityHandler)
