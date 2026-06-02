@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS dead_letter_queue (
-    id SEREAL PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
     schema_id INT NOT NULL,
     schema_name VARCHAR(100),
     payload JSONB NOT NULL,
