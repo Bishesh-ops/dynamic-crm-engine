@@ -51,7 +51,7 @@ func main() {
 	}
 	defer db.Close()
 
-	migrationFiles := []string{"001_init.sql", "002_workflows.sql", "003_dlq.sql"}
+	migrationFiles := []string{"001_init.sql", "002_workflows.sql", "003_dlq.sql", "004_rbac.sql"}
 	for _, file := range migrationFiles {
 		path := filepath.Join("cmd", "api", "migrations", file)
 		sqlBytes, err := os.ReadFile(path)
@@ -173,6 +173,13 @@ func (api *API) CreateEntitiesHandler(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusUnprocessableEntity, fmt.Sprintf("Validation failed: %v", err))
 		return
 	}
+
+	user, ok := auth.GetUser(r.Context())
+	if !ok {
+		response.Error(w, http.StatusUnauthorized, "System identity failure")
+		return
+	}
+	payload["_created_by"] = user.ID
 
 	err = api.Bus.Publish(eventbus.Event{
 		SchemaID:   schemaID,
