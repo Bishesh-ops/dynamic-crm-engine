@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"regexp"
 )
 
 type Schema struct {
@@ -10,11 +11,12 @@ type Schema struct {
 }
 
 type FieldDefinition struct {
-	Type       string                     `json:"type"`
-	Required   bool                       `json:"required"`
-	Properties map[string]FieldDefinition `json:"properties,omitempty"`
-	Min        *float64                   `json:"min,omitempty"`
-	MaxLength  *int                       `json:"max_length,omitempty"`
+	Type         string                     `json:"type"`
+	Required     bool                       `json:"required"`
+	Properties   map[string]FieldDefinition `json:"properties,omitempty"`
+	Min          *float64                   `json:"min,omitempty"`
+	MaxLength    *int                       `json:"max_length,omitempty"`
+	TargetSchema string                     `json:"target_schema,omitempty"`
 }
 
 func (s *Schema) Validate(payload map[string]any) error {
@@ -85,6 +87,15 @@ func validateField(value any, def FieldDefinition, path string) error {
 		default:
 			return fmt.Errorf("invalid type for %s: expected int", path)
 
+		}
+	case "relation":
+		strVal, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("invalid type for  %s: expected relation UUID string", path)
+		}
+		uuidRegex := regexp.MustCompile(`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`)
+		if !uuidRegex.MatchString(strVal) {
+			return fmt.Errorf("field %s must be a valid UUID pointing to a %s record", path, def.TargetSchema)
 		}
 	case "object":
 		objMap, ok := value.(map[string]any)

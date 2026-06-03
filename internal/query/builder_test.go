@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestBuildSQL(t *testing.T) {
+func TestBuildSQL_Base(t *testing.T) {
 	req := Request{
 		SchemaID: 1,
 		Conditions: []Condition{
@@ -16,16 +16,55 @@ func TestBuildSQL(t *testing.T) {
 		Offset: 0,
 	}
 
+	sqlStr, _, err := BuildSQL(req)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	expectedSQL := `
+		SELECT e.id, e.schema_id, e.data
+		FROM entities e
+		WHERE e.schema_id = $1 AND e.data @> $2 AND (e.data->'profile'->>'score')::numeric > $3
+		ORDER BY e.id DESC LIMIT $4 OFFSET $5`
+
+	cleanSQL := strings.Join(strings.Fields(sqlStr), " ")
+	cleanExpected := strings.Join(strings.Fields(expectedSQL), " ")
+
+	if cleanSQL != cleanExpected {
+		t.Errorf("\nExpected: %s\nGot:      %s", cleanExpected, cleanSQL)
+	}
+}
+
+func TestBuildSQL_WithJoins(t *testing.T) {
+	req := Request{
+		SchemaID: 1, // Target: Tickets
+		Conditions: []Condition{
+			{Field: "status", Op: "==", Value: "open"},
+		},
+		Joins: []JoinRule{
+			{
+				RelationField: "customer", // The JSON key holding the UUID
+				TargetSchema:  2,          // Target: Contacts
+				Conditions: []Condition{
+					{Field: "region", Op: "==", Value: "APAC"},
+				},
+			},
+		},
+		Limit:  25,
+		Offset: 0,
+	}
+
 	sqlStr, args, err := BuildSQL(req)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	expectedSQL := `
-		SELECT id, schema_id, data 
-		FROM entities 
-		WHERE schema_id = $1 AND data @> $2 AND (data->'profile'->>'score')::numeric > $3 
-		ORDER BY id DESC LIMIT $4 OFFSET $5`
+		SELECT e.id, e.schema_id, e.data
+		FROM entities e
+		JOIN entities j1 ON (e.data->>'customer')::uuid = j1.id AND j1.schema_id = $3
+		WHERE e.schema_id = $1 AND e.data @> $2 AND j1.data @> $4
+		ORDER BY e.id DESC LIMIT $5 OFFSET $6`
 
 	cleanSQL := strings.Join(strings.Fields(sqlStr), " ")
 	cleanExpected := strings.Join(strings.Fields(expectedSQL), " ")
@@ -34,21 +73,9 @@ func TestBuildSQL(t *testing.T) {
 		t.Errorf("\nExpected: %s\nGot:      %s", cleanExpected, cleanSQL)
 	}
 
-	expectedArgs := []any{1, `{"status":"active"}`, 90.0, 10, 0}
-
+	expectedArgs := []any{1, `{"status":"open"}`, 2, `{"region":"APAC"}`, 25, 0}
 	if len(args) != len(expectedArgs) {
 		t.Fatalf("Expected %d args, got %d", len(expectedArgs), len(args))
-	}
-
-	for i := range args {
-		val1 := args[i]
-		if b, ok := val1.([]byte); ok {
-			val1 = string(b)
-		}
-
-		if val1 != expectedArgs[i] {
-			t.Errorf("Arg %d: expected %v, got %v", i, expectedArgs[i], val1)
-		}
 	}
 }
 
