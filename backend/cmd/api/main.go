@@ -95,6 +95,7 @@ func main() {
 		r.Use(auth.RequireJWT(jwtSecret))
 
 		r.Post("/schemas", api.CreateSchemaHandler)
+		r.Get("/schemas/{schema_name}", api.GetSchemaHandler)
 		r.Post("/entities/{schema_name}", api.CreateEntitiesHandler)
 		r.Post("/query", api.SearchEntitiesHandler)
 		r.Post("/workflows", api.CreateWorkflowHandler)
@@ -321,4 +322,15 @@ func (api *API) ReplayDLQHandler(w http.ResponseWriter, r *http.Request) {
 		"message":  fmt.Sprintf("Successfully re-queued %d events from the DLQ", replayedCount),
 		"replayed": replayedCount,
 	})
+}
+
+func (api *API) GetSchemaHandler(w http.ResponseWriter, r *http.Request) {
+	schemaName := chi.URLParam(r, "schema_name")
+
+	s, _, err := api.DB.GetSchemaByName(r.Context(), schemaName)
+	if err != nil {
+		response.Error(w, http.StatusNotFound, "Schema Not Found")
+		return
+	}
+	response.JSON(w, http.StatusOK, s)
 }
