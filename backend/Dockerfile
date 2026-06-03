@@ -20,8 +20,6 @@ WORKDIR /root/
 COPY --from=builder /app/crm-engine .
 COPY --from=builder /app/cmd/api/migrations ./cmd/api/migrations
 
-COPY --from=builder /app/web ./web
-
 EXPOSE 8080
 
 CMD ["./crm-engine"]

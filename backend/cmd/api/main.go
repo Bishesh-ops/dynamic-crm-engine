@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -19,9 +18,7 @@ import (
 	"github.com/bisheshops/dynamic-crm-engine/internal/query"
 	"github.com/bisheshops/dynamic-crm-engine/internal/response"
 	"github.com/bisheshops/dynamic-crm-engine/internal/schema"
-	"github.com/bisheshops/dynamic-crm-engine/internal/ui"
 	"github.com/bisheshops/dynamic-crm-engine/internal/workflow"
-	"github.com/bisheshops/dynamic-crm-engine/web"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/go-chi/chi/v5"
@@ -29,9 +26,8 @@ import (
 )
 
 type API struct {
-	DB    *database.DB
-	Bus   *eventbus.Bus
-	Cache ui.TemplateCache
+	DB  *database.DB
+	Bus *eventbus.Bus
 }
 
 func main() {
@@ -78,26 +74,14 @@ func main() {
 
 	bus := eventbus.New(db, 5, 500, 2*time.Second, activeWorkflows)
 
-	templateCache, err := ui.NewTemplateCache()
-	if err != nil {
-		log.Fatalf("Failed to initialize template cache: %v", err)
-	}
-
 	api := &API{
-		DB:    db,
-		Bus:   bus,
-		Cache: templateCache,
+		DB:  db,
+		Bus: bus,
 	}
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
-
-	staticFS, err := fs.Sub(web.Assets, "static")
-	if err != nil {
-		log.Fatalf("Failed to load embedded static files: %v", err)
-	}
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		response.JSON(w, http.StatusOK, map[string]string{"status": "engine and database are running"})
@@ -119,14 +103,6 @@ func main() {
 		r.Get("/entities/{id}", api.GetEntityHandler)
 		r.Put("/entities/{schema_name}/{id}", api.UpdateEntityHandler)
 		r.Delete("/entities/{id}", api.DeleteEntityHandler)
-	})
-
-	r.Route("/ui", func(r chi.Router) {
-		r.Get("/dashboard", api.DashboardPageHandler)
-		r.Get("/schemas", api.SchemaBuilderPageHandler)
-
-		r.Get("/entities/fragment", api.EntityTableFragmentHandler)
-		r.Delete("/entities/{id}", api.DeleteEntityUIHandler)
 	})
 
 	port := ":8080"
